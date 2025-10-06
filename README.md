@@ -53,7 +53,6 @@ Make sure you have implemented all of the hints, code, and tests below.
   - Add code to pick the appropriate back-end data strategy (we currently only have 1, our `memory` strategy, but we'll add ones for AWS later). Create `src/model/data/index.js` and have it re-export the `memory` module: `module.exports = require('./memory');`
   - Implement a `Fragment` class to use your Data Model and In-Memory database. See implementation outline in [src/model/fragment.js](src/model/fragment.js) and complete tests in [tests/unit/fragment.test.js](tests/unit/fragment.test.js). Write the code implementation necessary to get all these tests passing in CI. This is an example of **Test Driven Development (TDD)**.
 - Write a `POST /fragments` route with **unit tests** using your `Fragment` class:
-
   - Parse the `Content-Type` header using the [content-type](https://www.npmjs.com/package/content-type) module, and error/log on unknown types.
   - Use the built-in [Express' `raw` body parser](http://expressjs.com/en/api.html#express.raw) to get a `Buffer` (i.e., raw binary data). We won't use `body-parser` or `express.json()`). Here's a hint:
 
@@ -89,10 +88,8 @@ Make sure you have implemented all of the hints, code, and tests below.
 - Add appropriate **logging** to all of the code above. Make sure you include all of the following logs: `debug` logs (places where you need to get info about what's going on in order to debug a problem), `info` (places where regular operations are happening that you need to know about), `warn` (places where errors occur that you are handling), and `error` (places where an error is happening that you don't expect) logs.
 
 - Work with a hashed email vs. plain text version for data privacy (i.e., what if our database gets compromised? We can store the user data without exposing their email):
-
   - Add [src/hash.js](src/hash.js) and [tests/unit/hash.test.js](tests/unit/hash.test.js) to your project
   - Use custom middleware to **hash** the user's email address on `req`:
-
     - Add [src/auth/auth-middleware.js](src/auth/auth-middleware.js) to your project
     - Update `src/auth/cognito.js` to use the custom authorize middleware:
 
