@@ -1,6 +1,18 @@
 const logger = require('../logger');
 
-module.exports = (err, req, res) => {
+module.exports = (err, req, res, next) => {
   logger.error({ err }, 'Unhandled Error');
-  res.status(err.status || 500).json({ error: err.message || 'Server error' });
+
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  if (typeof res.status !== 'function') {
+    console.error('⚠️ res is not a valid Express response object');
+    return;
+  }
+
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal Server Error',
+  });
 };

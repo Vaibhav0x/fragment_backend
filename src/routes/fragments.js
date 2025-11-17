@@ -1,87 +1,187 @@
 const express = require('express');
 const contentType = require('content-type');
 const Fragment = require('../model/fragment');
-const basicAuth = require('../auth/basic-auth'); // default for tests/dev
-const cognitoAuth = require('../auth/cognito'); // production bearer
+const basicAuth = require('../auth/basic-auth');
+const cognitoAuth = require('../auth/cognito');
+const convertFragment = require('../middleware/convert');
 
 const router = express.Router();
 
-/**
- * For the purposes of the assignment, allow configuration of auth type via ENV:
- *   AUTH_STRATEGY=basic   -> use basic auth
- *   AUTH_STRATEGY=bearer  -> use bearer/cognito
- * default: basic
- */
+// -----------------------------------------------------------------------------
+// Choose authentication strategy (basic for dev/tests, cognito for production)
+// -----------------------------------------------------------------------------
 const authStrategy = process.env.AUTH_STRATEGY === 'bearer' ? cognitoAuth : basicAuth;
-
-// router.use(authStrategy().bind ? authStrategy() : authStrategy); // call returned middleware
 router.use(authStrategy.authenticate());
 
-// raw body parser only for supported types
+// -----------------------------------------------------------------------------
+// Helper: Raw body parser for supported content types
+// -----------------------------------------------------------------------------
 const rawBody = () =>
   express.raw({
     inflate: true,
     limit: '5mb',
-    type: (req) => {
-      try {
-        const { type } = contentType.parse(req);
-        return Fragment.isSupportedType(type);
-      } catch (e) {
-        return false;
-      }
-    },
+    type: ['text/*', 'application/json'], // Accept these content types
   });
 
-// POST /v1/fragments
-router.post('/fragments', rawBody(), async (req, res, next) => {
+// -----------------------------------------------------------------------------
+// POST /v1/fragments → create a new fragment
+// -----------------------------------------------------------------------------
+router.post('/fragments', express.json(), rawBody(), async (req, res, next) => {
   try {
-    if (!Buffer.isBuffer(req.body)) {
+    const contentTypeHeader = req.get('Content-Type');
+    if (!contentTypeHeader) {
+      return res.status(415).json({ error: 'Content-Type header required' });
+    }
+
+    const { type } = contentType.parse(contentTypeHeader);
+    if (!Fragment.isSupportedType(type)) {
       return res.status(415).json({ error: 'Unsupported Media Type' });
     }
-    const ct = contentType.parse(req).type;
-    const fragment = await Fragment.create(req.user.ownerId, ct, req.body);
+
+    // Get the raw data from either JSON middleware or raw body middleware
+    const data = type === 'application/json' ? Buffer.from(JSON.stringify(req.body)) : req.body;
+    if (!Buffer.isBuffer(data)) {
+      return res.status(415).json({ error: 'Unsupported Media Type' });
+    }
+
+    const fragment = await Fragment.create(req.user.ownerId, type, data);
+
     const base = process.env.API_URL || `http://${req.headers.host}`;
-    res.set('Location', `${base}/v1/fragments/${fragment.id}`);
-    res.status(201).json(fragment);
+    res
+      .status(201)
+      .set('Location', `${base}/v1/fragments/${fragment.id}`)
+      .json(fragment);
   } catch (err) {
     next(err);
   }
 });
 
-// GET /v1/fragments -> list fragment ids
+// -----------------------------------------------------------------------------
+// GET /v1/fragments?expand=1 → list fragments for the authenticated user
+// -----------------------------------------------------------------------------
 router.get('/fragments', async (req, res, next) => {
   try {
-    const ids = await Fragment.list(req.user.ownerId);
-    res.json({ fragments: ids });
+    const expand = req.query.expand === '1';
+    const fragments = await Fragment.byUser(req.user.ownerId, expand);
+    res.status(200).json({ fragments });
   } catch (err) {
     next(err);
   }
 });
 
-// GET /v1/fragments/:id -> metadata
+// -----------------------------------------------------------------------------
+// GET /v1/fragments/:id.:ext → convert fragment to another format (e.g. .md → .html)
+// -----------------------------------------------------------------------------
+router.get('/fragments/:id.:ext', async (req, res, next) => {
+  try {
+    const fragment = await Fragment.byId(req.user.ownerId, req.params.id);
+    if (!fragment) {
+      return res.status(404).json({ error: 'Fragment not found' });
+    }
+
+    const data = await fragment.getData();
+    const { convertedData, contentType: convertedType } = convertFragment(fragment, data, req.params.ext);
+
+    res.type(convertedType).send(convertedData);
+  } catch (err) {
+    next(err);
+  }
+});
+
+
+// -----------------------------------------------------------------------------
+// GET /v1/fragments/:id → return raw fragment data
+// -----------------------------------------------------------------------------
+// router.get('/fragments/:id', async (req, res, next) => {
+//   try {
+//     const fragment = await Fragment.byId(req.user.ownerId, req.params.id);
+//     if (!fragment) {
+//       return res.status(404).json({ error: 'Fragment not found' });
+//     }
+
+//     // Check if client accepts json
+//     const wantsJson = req.accepts('application/json');
+//     if (wantsJson) {
+//       return res.json(fragment);
+//     }
+
+//     // Otherwise send raw data
+//     const data = await fragment.getData();
+//     res.type(fragment.mimeType).send(data);
+//   } catch (err) {
+//     next(err);
+//   }
+// });
+// router.get('/fragments/:id', async (req, res, next) => {
+//   try {
+//     const fragment = await Fragment.byId(req.user.ownerId, req.params.id);
+//     if (!fragment) {
+//       return res.status(404).json({ error: 'Fragment not found' });
+//     }
+
+//     // Always return the actual fragment content
+//     const data = await fragment.getData();
+//     res.setHeader('Content-Type', fragment.mimeType);
+//     res.status(200).send(data);
+//   } catch (err) {
+//     next(err);
+//   }
+// });
+
 router.get('/fragments/:id', async (req, res, next) => {
   try {
-    const meta = await Fragment.read(req.user.ownerId, req.params.id);
-    res.json(meta);
+    const fragment = await Fragment.byId(req.user.ownerId, req.params.id);
+
+    if (!fragment) {
+      return res.status(404).json({ error: 'Fragment not found' });
+    }
+
+    // Return ONLY metadata (id, type, size, etc.)
+    res.status(200).json({
+      id: fragment.id,
+      ownerId: fragment.ownerId,
+      type: fragment.type,
+      size: fragment.size,
+      created: fragment.created,
+      updated: fragment.updated,
+    });
   } catch (err) {
     next(err);
   }
 });
 
-// GET /v1/fragments/:id/data -> raw data
+
+// -----------------------------------------------------------------------------
+// GET /v1/fragments/:id/info → return fragment metadata only
+// -----------------------------------------------------------------------------
+router.get('/fragments/:id/info', async (req, res, next) => {
+  try {
+    const fragment = await Fragment.byId(req.user.ownerId, req.params.id);
+    if (!fragment) {
+      return res.status(404).json({ error: 'Fragment not found' });
+    }
+
+    console.log('🔍 Returning fragment info for ID:', req);
+    res.json(fragment);
+  } catch (err) {
+    next(err);
+  }
+});
+
+
+// -----------------------------------------------------------------------------
+// GET /v1/fragments/:id/data → explicitly return raw fragment data
+// -----------------------------------------------------------------------------
 router.get('/fragments/:id/data', async (req, res, next) => {
   try {
-    const ownerId = req.user.ownerId;
-    const { id } = req.params;
+    const fragment = await Fragment.byId(req.user.ownerId, req.params.id);
+    if (!fragment) {
+      return res.status(404).json({ error: 'Fragment not found' });
+    }
 
-    const frag = await Fragment.byId(ownerId, id);
-    if (!frag) return res.status(404).send('Fragment not found');
-
-    const dataBuffer = await Fragment.readData(ownerId, id);
-
-    // explicitly set Content-Type to exactly 'text/plain'
-    res.setHeader('Content-Type', frag.mimeType);
-    res.send(dataBuffer);
+    const data = await fragment.getData();
+    res.setHeader('Content-Type', fragment.mimeType);
+    res.send(data);
   } catch (err) {
     next(err);
   }

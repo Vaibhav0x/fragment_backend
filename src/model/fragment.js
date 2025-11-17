@@ -17,7 +17,7 @@ class Fragment {
     this.updated = updated || created;
   }
 
-  static validTypes = ['text/plain'];
+  static validTypes = ['text/plain', 'text/markdown', 'application/json'];
 
   static isSupportedType(type) {
     return Fragment.validTypes.includes(type.split(';')[0]);
@@ -31,8 +31,26 @@ class Fragment {
     return this.mimeType.startsWith('text/');
   }
 
+  get isJson() {
+    return this.mimeType === 'application/json';
+  }
+
+  get isMarkdown() {
+    return this.mimeType === 'text/markdown';
+  }
+
   get formats() {
-    return [this.mimeType];
+    const formats = [this.mimeType];
+
+    // Add conversion formats based on type
+    if (this.isMarkdown) {
+      formats.push('text/html');
+    }
+    if (this.isJson) {
+      formats.push('text/plain');
+    }
+
+    return formats;
   }
 
   // --- Instance Methods ---
