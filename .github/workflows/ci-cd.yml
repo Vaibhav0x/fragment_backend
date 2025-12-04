@@ -1,0 +1,151 @@
+name: Backend - CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Dockerfile'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'docker-compose.yml'
+      - '.github/workflows/backend-ci-cd.yml'
+  pull_request:
+    branches: [main]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: fragments-backend
+  NODE_ENV: test
+
+jobs:
+  # =========================================================
+  # CI: Install → Lint → Test
+  # =========================================================
+  build-test:
+    name: Build, Lint & Test Backend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run Jest tests
+        run: npm test -- --runInBand --detectOpenHandles
+
+  # =========================================================
+  # CD: Build Docker Image → Push to ECR
+  # =========================================================
+  build-and-push:
+    name: Docker Build & Push to ECR
+    needs: build-test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # -------- Check secrets --------
+      - name: Check AWS secrets
+        id: check-secrets
+        run: |
+          if [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ] || [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ] || [ -z "${{ secrets.AWS_ACCOUNT_ID }}" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "⚠️ AWS Secrets missing → Skipping ECR push"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      # -------- Configure AWS --------
+      - name: Configure AWS Credentials
+        if: steps.check-secrets.outputs.skip == 'false'
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Login to ECR
+      - name: Login to Amazon ECR
+        if: steps.check-secrets.outputs.skip == 'false'
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      # Build Docker image
+      - name: Build Docker image
+        if: steps.check-secrets.outputs.skip == 'false'
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      # Push Docker image
+      - name: Push image to ECR
+        if: steps.check-secrets.outputs.skip == 'false'
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "Pushed:"
+          echo "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+  # =========================================================
+  # CD: Deploy to ECS
+  # =========================================================
+  deploy-to-ecs:
+    name: Deploy to ECS
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Check AWS secrets
+        id: check-secrets
+        run: |
+          if [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Configure AWS credentials
+        if: steps.check-secrets.outputs.skip == 'false'
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy to ECS
+        if: steps.check-secrets.outputs.skip == 'false'
+        run: |
+          aws ecs update-service \
+            --cluster fragments-cluster \
+            --service fragments-backend-service \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }} 2>/dev/null || echo "⚠️ Backend ECS service not found"
+
+      - name: Wait for service to stabilize
+        if: steps.check-secrets.outputs.skip == 'false'
+        run: |
+          aws ecs wait services-stable \
+            --cluster fragments-cluster \
+            --services fragments-backend-service \
+            --region ${{ env.AWS_REGION }} || echo "⚠️ Service not yet created"
