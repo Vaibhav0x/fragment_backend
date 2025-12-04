@@ -12,17 +12,17 @@ app.use(express.urlencoded({ extended: true }));
 
 // CORS before routes
 app.use(
-  cors({
-    origin: ['http://localhost:3000', 'http://localhost', 'http://127.0.0.1'],
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true,
-  })
+    cors({
+        origin: ['http://localhost:3000', 'http://localhost', 'http://127.0.0.1'],
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization'],
+        credentials: true,
+    })
 );
 
 // Health check
 app.get('/', (req, res) => {
-  res.status(200).json({ status: 'ok' });
+    res.status(200).json({ status: 'ok' });
 });
 
 // Routes
