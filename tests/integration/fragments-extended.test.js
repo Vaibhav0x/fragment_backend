@@ -28,7 +28,7 @@ describe('POST /v1/fragments', () => {
 describe('GET /v1/fragments with expand', () => {
     test('should return full metadata when expand=1', async () => {
         // First create a fragment
-        const createRes = await request(app)
+        await request(app)
             .post('/v1/fragments')
             .auth('admin', 'password')
             .set('Content-Type', 'text/plain')

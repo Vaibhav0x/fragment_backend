@@ -3,8 +3,8 @@ module.exports = {
 
   collectCoverage: true,
   collectCoverageFrom: [
-    "src/**/*.js",       // include ALL source files
-    "!src/**/*.test.js", // exclude test files
+    'src/**/*.js',
+    '!src/**/*.test.js',
   ],
 
   coverageDirectory: 'coverage',
