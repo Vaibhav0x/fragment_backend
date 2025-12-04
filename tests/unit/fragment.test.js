@@ -165,7 +165,7 @@ describe('Fragment class', () => {
     });
 
     test('create unsupported type throws 415', async () => {
-      await expect(Fragment.create('owner', 'image/png', Buffer.alloc(0))).rejects.toHaveProperty(
+      await expect(Fragment.create('owner', 'application/octet-stream', Buffer.alloc(0))).rejects.toHaveProperty(
         'status',
         415
       );

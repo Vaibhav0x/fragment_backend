@@ -17,7 +17,7 @@ class Fragment {
     this.updated = updated || created;
   }
 
-  static validTypes = ['text/plain', 'text/markdown', 'application/json'];
+  static validTypes = ['text/plain', 'text/markdown', 'application/json', 'image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 
   static isSupportedType(type) {
     return Fragment.validTypes.includes(type.split(';')[0]);
@@ -39,6 +39,10 @@ class Fragment {
     return this.mimeType === 'text/markdown';
   }
 
+  get isImage() {
+    return this.mimeType.startsWith('image/');
+  }
+
   get formats() {
     const formats = [this.mimeType];
 
@@ -49,6 +53,11 @@ class Fragment {
     if (this.isJson) {
       formats.push('text/plain');
     }
+    if (this.isImage) {
+      // All image types can be converted to other image formats
+      const allImageTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+      formats.push(...allImageTypes.filter(type => type !== this.mimeType));
+    }
 
     return formats;
   }
@@ -56,7 +65,20 @@ class Fragment {
   // --- Instance Methods ---
   async save() {
     this.updated = new Date().toISOString();
+    // First, get existing data so we don't lose it
+    let existingData = null;
+    try {
+      existingData = await data.readFragmentData(this.ownerId, this.id);
+    } catch (err) {
+      // Fragment data might not exist yet (new fragment)
+    }
+
     await data.writeFragment(this.ownerId, this);
+
+    // Re-save the data if it existed
+    if (existingData) {
+      await data.writeFragmentData(this.ownerId, this.id, existingData);
+    }
   }
 
   async setData(buffer) {

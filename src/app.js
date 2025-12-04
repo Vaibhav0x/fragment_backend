@@ -7,11 +7,11 @@ const errorHandler = require('./middleware/error-handler');
 
 const app = express();
 
-// ✅ Parse JSON + URL-encoded
+// Parse JSON + URL-encoded
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ CORS before routes
+// CORS before routes
 app.use(
     cors({
         origin: [
@@ -25,15 +25,15 @@ app.use(
     })
 );
 
-// ✅ Health check
+// Health check
 app.get('/', (req, res) => {
     res.status(200).json({ status: 'ok' });
 });
 
-// ✅ Routes
+// Routes
 app.use('/v1', routes);
 
-// ✅ Error handler — last!
+// Error handler — last!
 app.use(errorHandler);
 
 module.exports = app;
