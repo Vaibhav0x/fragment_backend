@@ -10,18 +10,18 @@ const md = new MarkdownIt();
  * @returns {Promise<{ convertedData: Buffer, contentType: string }>}
  */
 async function convertFragment(fragment, data, extension) {
-    console.log('🧠 convertFragment called with:', {
-        type: fragment.mimeType,
-        isJson: fragment.isJson,
-        isMarkdown: fragment.isMarkdown,
-        isImage: fragment.isImage,
-        extension,
-    });
+  console.log('🧠 convertFragment called with:', {
+    type: fragment.mimeType,
+    isJson: fragment.isJson,
+    isMarkdown: fragment.isMarkdown,
+    isImage: fragment.isImage,
+    extension,
+  });
 
-    // If no extension provided, return original data
-    if (!extension) {
-        return { convertedData: data, contentType: fragment.mimeType };
-    }
+  // If no extension provided, return original data
+  if (!extension) {
+    return { convertedData: data, contentType: fragment.mimeType };
+  }
 
     const targetExt = extension.toLowerCase();
 
